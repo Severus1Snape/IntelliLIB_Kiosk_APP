@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IntelliLIB Kiosk</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load QR Scanner Library -->
+    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+    <style>
+        /* Custom styles for scanner */
+        #reader-user, #reader-book { /* Apply common styles */
+            width: 100%;
+            max-width: 400px; /* Adjust as needed */
+            border: 2px solid #e2e8f0;
+            border-radius: 0.5rem;
+            overflow: hidden; /* Ensures video doesn't overflow rounded corners */
+            margin: 1rem auto; /* Center the reader */
+            min-height: 250px; /* Ensure space for the video */
+            background-color: #f9fafb; /* Light background */
+        }
+        #reader-user video, #reader-book video { /* Apply common styles */
+            display: block; /* Remove extra space below video */
+        }
+        /* Style for buttons and general layout */
+        body {
+            font-family: 'Inter', sans-serif; /* Using Inter font */
+            background-color: #f3f4f6; /* Light gray background */
+        }
+        .card {
+            background-color: white;
+            padding: 2rem;
+            border-radius: 0.75rem; /* Rounded corners */
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            margin: 2rem auto;
+            max-width: 600px;
+            text-align: center;
+        }
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            /* Prevent double-tap zoom on mobile */
+            touch-action: manipulation;
+        }
+        .btn-primary {
+            background-color: #4f46e5; /* Indigo */
+            color: white;
+        }
+        .btn-primary:hover {
+            background-color: #4338ca;
+        }
+         .btn-secondary {
+            background-color: #e5e7eb; /* Gray */
+            color: #374151; /* Dark gray text */
+        }
+        .btn-secondary:hover {
+            background-color: #d1d5db;
+        }
+        .message-box {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 1rem 1.5rem;
+            border-radius: 0.5rem;
+            color: white;
+            font-weight: 600;
+            z-index: 1000;
+            display: none; /* Initially hidden */
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .message-success { background-color: #10b981; } /* Emerald */
+        .message-error { background-color: #ef4444; } /* Red */
+        .message-info { background-color: #3b82f6; } /* Blue */
+
+        /* Loading Spinner */
+        .loader {
+            border: 4px solid #f3f3f3; /* Light grey */
+            border-top: 4px solid #4f46e5; /* Indigo */
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 1rem auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen">
+
+    <div id="kiosk-app" class="card w-full max-w-lg">
+        <h1 class="text-3xl font-bold mb-6 text-gray-800">IntelliLIB Kiosk</h1>
+
+        <!-- Step 1: Scan User QR -->
+        <div id="step-scan-user" class="step">
+            <h2 class="text-xl font-semibold mb-4 text-gray-700">Scan Your Mobile QR Code</h2>
+            <div id="reader-user"></div>
+            <div id="user-scan-status" class="mt-4 text-gray-600">Please position your QR code in front of the scanner.</div>
+            <div id="user-loading" class="loader" style="display: none;"></div>
+        </div>
+
+        <!-- Step 2: Select Action -->
+        <div id="step-select-action" class="step" style="display: none;">
+            <h2 class="text-xl font-semibold mb-2 text-gray-700">Welcome, <span id="user-name" class="font-bold"></span>!</h2>
+            <p class="mb-6 text-gray-600">Student ID: <span id="student-id"></span></p>
+            <p class="mb-6 text-gray-600">Token: <span id="session-token-display" class="break-all text-xs text-gray-500"></span></p>
+
+            <div class="flex space-x-4 justify-center">
+                <button id="btn-issue" class="btn btn-primary">Issue Book</button>
+                <button id="btn-return" class="btn btn-secondary">Return Book</button>
+            </div>
+             <button id="btn-logout" class="mt-6 text-sm text-gray-500 hover:text-red-600">End Session</button>
+        </div>
+
+        <!-- Step 3: Scan Book -->
+        <div id="step-scan-book" class="step" style="display: none;">
+            <h2 class="text-xl font-semibold mb-4 text-gray-700">Scan Book QR Code</h2>
+            <p id="scan-book-instruction" class="mb-4 text-gray-600"></p>
+            <div id="reader-book"></div>
+            <div id="book-scan-status" class="mt-4 text-gray-600">Position the book's QR code in front of the scanner.</div>
+            <div id="book-loading" class="loader" style="display: none;"></div>
+            <button id="btn-cancel-scan" class="btn btn-secondary mt-4">Cancel</button>
+        </div>
+
+         <!-- Step 4: Transaction Result -->
+        <div id="step-result" class="step" style="display: none;">
+            <h2 id="result-title" class="text-2xl font-bold mb-4"></h2>
+            <p id="result-message" class="mb-6 text-gray-700"></p>
+            <button id="btn-new-transaction" class="btn btn-primary">Start New Transaction</button>
+        </div>
+
+    </div>
+
+    <!-- Message Box for Notifications -->
+    <div id="message-box" class="message-box"></div>
+
+    <script>
+        // --- Configuration ---
+        // TODO: REPLACE THESE PLACEHOLDER URLS WITH YOUR ACTUAL DEPLOYED API GATEWAY ENDPOINTS
+        const API_URL_AUTH = "https://sepn83zky8.execute-api.us-east-1.amazonaws.com/prod/kiosk/auth"; // Example, replace
+        const API_URL_ISSUE = "https://sepn83zky8.execute-api.us-east-1.amazonaws.com/prod/book/issue"; // Example, replace
+        const API_URL_RETURN = "https://sepn83zky8.execute-api.us-east-1.amazonaws.com/prod/book/return"; // Example, replace
+
+        // --- State Variables ---
+        let currentStep = 'scan-user';
+        let userScanner = null;
+        let bookScanner = null;
+        let sessionToken = null;
+        let currentAction = null; // 'issue' or 'return'
+        let currentStudentId = null;
+        let currentUserName = null;
+
+        // --- DOM Elements ---
+        const steps = {
+            'scan-user': document.getElementById('step-scan-user'),
+            'select-action': document.getElementById('step-select-action'),
+            'scan-book': document.getElementById('step-scan-book'),
+            'result': document.getElementById('step-result'),
+        };
+        const userScanStatus = document.getElementById('user-scan-status');
+        const bookScanStatus = document.getElementById('book-scan-status');
+        const userNameDisplay = document.getElementById('user-name');
+        const studentIdDisplay = document.getElementById('student-id');
+        const sessionTokenDisplay = document.getElementById('session-token-display');
+        const scanBookInstruction = document.getElementById('scan-book-instruction');
+        const resultTitle = document.getElementById('result-title');
+        const resultMessage = document.getElementById('result-message');
+        const messageBox = document.getElementById('message-box');
+        const userLoading = document.getElementById('user-loading');
+        const bookLoading = document.getElementById('book-loading');
+
+
+        // --- Helper Functions ---
+        function navigateToStep(stepId) {
+            Object.values(steps).forEach(step => step.style.display = 'none');
+            steps[stepId].style.display = 'block';
+            currentStep = stepId;
+            console.log("Navigated to step:", stepId);
+
+            // Clear previous scanner visuals
+            const userReaderDiv = document.getElementById('reader-user');
+            const bookReaderDiv = document.getElementById('reader-book');
+            if (userReaderDiv) userReaderDiv.innerHTML = '';
+            if (bookReaderDiv) bookReaderDiv.innerHTML = '';
+
+
+            // Stop existing scanners before starting new ones or navigating away
+            if (userScanner) {
+                stopScanner(userScanner, 'reader-user');
+                userScanner = null;
+            }
+            if (bookScanner) {
+                stopScanner(bookScanner, 'reader-book');
+                bookScanner = null;
+            }
+
+            // Start appropriate scanner AFTER navigating and stopping others
+            if (stepId === 'scan-user') {
+                startUserScanner();
+            } else if (stepId === 'scan-book') {
+                startBookScanner();
+            }
+        }
+
+        function showMessage(message, type = 'info', duration = 3000) {
+            messageBox.textContent = message;
+            messageBox.className = `message-box message-${type}`; // Reset classes
+            messageBox.style.display = 'block';
+            // Clear previous timer if exists
+            if (messageBox.timerId) clearTimeout(messageBox.timerId);
+            messageBox.timerId = setTimeout(() => {
+                messageBox.style.display = 'none';
+                messageBox.timerId = null;
+            }, duration);
+        }
+
+         function setLoading(stepId, isLoading) {
+            const loader = stepId === 'scan-user' ? userLoading : bookLoading;
+            if (loader) {
+                loader.style.display = isLoading ? 'block' : 'none';
+            }
+        }
+
+        async function apiRequest(url, method, body = null) {
+            // Check for placeholder URLs - Critical for debugging
+            if (url.includes("YOUR_API_ID") || url.includes("PLACEHOLDER")) {
+                 console.error("CRITICAL ERROR: API URL IS A PLACEHOLDER:", url);
+                 showMessage("ERROR: API URLs are not configured correctly in the Kiosk code!", 'error', 10000);
+                 setLoading('scan-user', false); // Ensure loading stops
+                 setLoading('scan-book', false);
+                 return null;
+            }
+            try {
+                const options = {
+                    method: method,
+                    headers: { 'Content-Type': 'application/json' },
+                };
+                if (body) {
+                    options.body = JSON.stringify(body);
+                }
+                const response = await fetch(url, options);
+                // Try to parse JSON, handle non-JSON responses gracefully
+                let data;
+                const contentType = response.headers.get("content-type");
+                if (contentType && contentType.indexOf("application/json") !== -1) {
+                    // Check if response status indicates success before parsing JSON
+                    if (response.ok) {
+                         data = await response.json();
+                    } else {
+                         // Try parsing error JSON, otherwise use status text
+                         try {
+                             data = await response.json();
+                         } catch (jsonError) {
+                             data = { error: response.statusText || `Request failed with status ${response.status}`};
+                         }
+                    }
+                } else {
+                     // Non-JSON response often indicates an error (like HTML error page)
+                     data = { error: response.statusText || `Request failed with status ${response.status}. Expected JSON response.` };
+                }
+
+                if (!response.ok) {
+                    // Handle API errors gracefully using parsed or default error message
+                    console.error('API Error:', response.status, data);
+                    const errorMessage = data?.error || data?.message || `Request failed with status ${response.status}`;
+                    showMessage(`Error: ${errorMessage}`, 'error');
+                    return null; // Indicate failure
+                }
+                return data; // Return successful data
+            } catch (error) {
+                console.error('Network or Fetch Error:', error);
+                 // Check if it's specifically a CORS-like error
+                 if (error instanceof TypeError && error.message.toLowerCase().includes('failed to fetch')) {
+                     showMessage('Network error: Blocked by browser security (CORS?). Check API Gateway CORS configuration and redeploy.', 'error', 10000);
+                 } else {
+                     showMessage('Network error. Could not reach the server.', 'error');
+                 }
+                return null; // Indicate failure
+            }
+        }
+
+
+        // --- Scanner Logic ---
+         function startScanner(readerId, successCallback, errorCallback) {
+            // Ensure the reader element exists and is empty
+            const readerElement = document.getElementById(readerId);
+            if (!readerElement) {
+                console.error(`Reader element ${readerId} not found.`);
+                return null;
+            }
+             readerElement.innerHTML = ''; // Clear previous content
+
+            const config = { fps: 10, qrbox: { width: 250, height: 250 }, rememberLastUsedCamera: true };
+            const scanner = new Html5Qrcode(readerId);
+
+             // Request camera permission and start scanning
+            scanner.start(
+                { facingMode: "environment" }, // Prefer back camera
+                config,
+                successCallback,
+                errorCallback
+            ).catch(err => {
+                console.error(`Unable to start scanning on ${readerId}`, err);
+                const statusElement = readerId === 'reader-user' ? userScanStatus : bookScanStatus;
+                if (statusElement) {
+                     statusElement.textContent = `ERROR: Cannot access camera. ${err}. Please grant permission and refresh.`;
+                     statusElement.classList.add('text-red-600');
+                }
+            });
+            return scanner; // Return the instance to manage it
+        }
+
+        // Updated stopScanner function
+        function stopScanner(scannerInstance, readerId) {
+            if (scannerInstance) {
+                scannerInstance.stop().then(() => {
+                    console.log(`Scanner stopped successfully for ${readerId}`);
+                    const readerDiv = document.getElementById(readerId);
+                    if (readerDiv) readerDiv.innerHTML = ''; // Clear visual
+                }).catch(err => {
+                    console.warn(`Scanner stop command failed for ${readerId}, likely already stopped:`, err);
+                    const readerDiv = document.getElementById(readerId);
+                    if (readerDiv) readerDiv.innerHTML = ''; // Still clear visual
+                });
+                 scannerInstance = null; // Ensure we mark it as stopped locally
+            } else {
+                 console.log(`Scanner instance for ${readerId} was null, nothing to stop.`);
+                 const readerDiv = document.getElementById(readerId);
+                 if (readerDiv) readerDiv.innerHTML = ''; // Ensure visual is clear
+            }
+        }
+
+
+        // --- User Scan Logic (UPDATED with try-catch) ---
+        function onUserScanSuccess(decodedText, decodedResult) {
+            console.log(`User QR Code detected: Raw text = ${decodedText}`);
+
+            // Stop the scanner immediately
+            if (userScanner) {
+                stopScanner(userScanner, 'reader-user');
+                 userScanner = null;
+            }
+             userScanStatus.textContent = `Processing QR code...`;
+             setLoading('scan-user', true);
+
+            // === START TRY-CATCH BLOCK ===
+            try {
+                const qrData = JSON.parse(decodedText);
+                 // Validate the structure AFTER successful parsing
+                 if (qrData.type === 'KIOSK_SESSION' && qrData.token && qrData.student_id) {
+                    // Call authentication ONLY if JSON is valid and has required fields
+                    authenticateUser(qrData.token, qrData.student_id);
+                } else {
+                     // Throw specific error if structure is wrong
+                     throw new Error("QR code has invalid data structure (missing 'type', 'token', or 'student_id').");
+                }
+            } catch (e) {
+                // Catch JSON.parse errors or structure errors
+                console.error("Failed to parse user QR or invalid data:", e);
+                userScanStatus.textContent = `Error: Invalid QR code scanned. ${e.message}. Please try again.`;
+                userScanStatus.classList.add('text-red-600');
+                setLoading('scan-user', false);
+                // Restart scanner after error
+                startUserScanner();
+            }
+            // === END TRY-CATCH BLOCK ===
+        }
+        function onUserScanFailure(error) {
+             // Reduce console noise for common "no qr code found" messages
+             if (!error || typeof error !== 'string' || !error.toLowerCase().includes('no qr code')) {
+                 console.warn(`User QR scan error reported: ${error}`);
+             }
+        }
+
+        async function authenticateUser(token, studentId) {
+             const result = await apiRequest(API_URL_AUTH, 'POST', { token: token, student_id: studentId });
+             setLoading('scan-user', false);
+
+             if (result && result.status === 'success') {
+                sessionToken = token; // Store the validated token
+                currentStudentId = result.student_id;
+                currentUserName = result.name;
+
+                // Update UI elements
+                userNameDisplay.textContent = currentUserName || 'N/A';
+                studentIdDisplay.textContent = currentStudentId || 'N/A';
+                sessionTokenDisplay.textContent = sessionToken || 'N/A'; // Display for debug
+
+                showMessage(`Welcome, ${currentUserName || 'Student'}!`, 'success');
+                navigateToStep('select-action');
+            } else {
+                 // API request handles showing the specific error message
+                 userScanStatus.textContent = `Authentication Failed. Please scan a valid code.`; // Generic message
+                 userScanStatus.classList.add('text-red-600');
+                // Restart scanner after authentication failure
+                startUserScanner();
+            }
+        }
+
+        function startUserScanner() {
+             if (currentStep === 'scan-user' && !userScanner) {
+                 userScanStatus.textContent = "Please position your QR code in front of the scanner.";
+                 userScanStatus.classList.remove('text-red-600');
+                 userScanner = startScanner('reader-user', onUserScanSuccess, onUserScanFailure);
+             }
+         }
+
+
+        // --- Book Scan Logic (UPDATED to handle JSON or Plain Text) ---
+        function onBookScanSuccess(decodedText, decodedResult) {
+            console.log(`Book QR Code detected: Raw text = ${decodedText}`);
+             if (bookScanner) {
+                 stopScanner(bookScanner, 'reader-book');
+                 bookScanner = null;
+             }
+            bookScanStatus.textContent = `Processing book QR...`;
+             setLoading('scan-book', true);
+
+            let bookId = null;
+            // === START BOOK ID EXTRACTION LOGIC ===
+            try {
+                // Try parsing as JSON first
+                const qrData = JSON.parse(decodedText);
+                if (qrData && (qrData.book_id || qrData.qr_code_content)) {
+                    bookId = qrData.book_id || qrData.qr_code_content; // Prefer book_id
+                    console.log("Parsed book QR as JSON, extracted ID:", bookId);
+                } else {
+                    // If JSON doesn't have the expected field, treat as plain text
+                     throw new Error("JSON structure invalid, treating as text.");
+                }
+            } catch (e) {
+                // If JSON parsing fails, assume it's plain text
+                console.log("Book QR not valid JSON, treating as plain text ID:", decodedText);
+                bookId = decodedText.trim();
+            }
+            // === END BOOK ID EXTRACTION LOGIC ===
+
+
+            if (!bookId) {
+                bookScanStatus.textContent = "Error: Invalid or empty book QR scanned. Please try again.";
+                 bookScanStatus.classList.add('text-red-600');
+                 setLoading('scan-book', false);
+                startBookScanner(); // Restart on bad scan
+                return;
+            }
+
+            // Proceed with the extracted bookId
+            if (currentAction === 'issue') {
+                issueBook(bookId);
+            } else if (currentAction === 'return') {
+                returnBook(bookId);
+            }
+        }
+        function onBookScanFailure(error) {
+             if (!error || typeof error !== 'string' || !error.toLowerCase().includes('no qr code')) {
+                 console.warn(`Book QR scan error reported: ${error}`);
+             }
+        }
+
+        async function issueBook(bookId) {
+            const result = await apiRequest(API_URL_ISSUE, 'POST', { token: sessionToken, book_qr_id: bookId });
+             setLoading('scan-book', false); // Stop loading indicator
+
+             if (result && result.status === 'success') {
+                resultTitle.textContent = "Book Issued Successfully!";
+                resultMessage.textContent = `Book ID ${bookId} has been issued to ${currentUserName || 'you'}.`;
+                 showMessage('Book Issued!', 'success');
+                navigateToStep('result');
+            } else {
+                 // API request handles showing specific error
+                 showMessage(`Issue Failed`, 'error'); // Generic message
+                 navigateToStep('select-action'); // Go back on failure
+            }
+        }
+
+        async function returnBook(bookId) {
+            const result = await apiRequest(API_URL_RETURN, 'POST', { token: sessionToken, book_qr_id: bookId });
+             setLoading('scan-book', false); // Stop loading indicator
+
+             if (result && result.status === 'success') {
+                 resultTitle.textContent = "Book Returned Successfully!";
+                 resultMessage.textContent = `Book ID ${bookId} has been returned. Thank you!`;
+                 showMessage('Book Returned!', 'success');
+                 navigateToStep('result');
+             } else {
+                  // API request handles showing specific error
+                 showMessage(`Return Failed`, 'error'); // Generic message
+                 navigateToStep('select-action'); // Go back on failure
+             }
+        }
+
+        function startBookScanner() {
+             if (currentStep === 'scan-book' && !bookScanner) {
+                 bookScanStatus.textContent = "Position the book's QR code in front of the scanner.";
+                 bookScanStatus.classList.remove('text-red-600');
+                 bookScanner = startScanner('reader-book', onBookScanSuccess, onBookScanFailure);
+             }
+         }
+
+         function resetKiosk() {
+            sessionToken = null;
+            currentAction = null;
+            currentStudentId = null;
+            currentUserName = null;
+             // Ensure all scanners are stopped before navigating
+            if (userScanner) {
+                stopScanner(userScanner, 'reader-user');
+                userScanner = null;
+            }
+            if (bookScanner) {
+                stopScanner(bookScanner, 'reader-book');
+                bookScanner = null;
+            }
+            navigateToStep('scan-user'); // Go back to the initial step
+         }
+
+
+        // --- Event Listeners ---
+        document.getElementById('btn-issue').addEventListener('click', () => {
+            currentAction = 'issue';
+            scanBookInstruction.textContent = "Scan the book you wish to ISSUE.";
+            navigateToStep('scan-book');
+        });
+
+        document.getElementById('btn-return').addEventListener('click', () => {
+            currentAction = 'return';
+             scanBookInstruction.textContent = "Scan the book you wish to RETURN.";
+            navigateToStep('scan-book');
+        });
+
+        document.getElementById('btn-cancel-scan').addEventListener('click', () => {
+             // Stop scanner is handled by navigateToStep
+            navigateToStep('select-action'); // Go back to choosing action
+        });
+
+         document.getElementById('btn-new-transaction').addEventListener('click', () => {
+             resetKiosk(); // Reset state and go to user scan
+         });
+
+         document.getElementById('btn-logout').addEventListener('click', () => {
+             showMessage('Session ended. Please scan your card again.', 'info');
+             resetKiosk();
+         });
+
+
+        // --- Initialization ---
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log("Kiosk Initialized");
+             // Initial check if API URLs look like placeholders
+             if (API_URL_AUTH.includes("YOUR_API_ID") || API_URL_ISSUE.includes("YOUR_API_ID") || API_URL_RETURN.includes("YOUR_API_ID")) {
+                  showMessage("CRITICAL ERROR: API URLs are not configured in kiosk_interface.html! Please update the code.", 'error', 15000);
+                  document.getElementById('kiosk-app').innerHTML = '<h2 class="text-red-600 font-bold">Kiosk Configuration Error: API URLs not set.</h2>';
+             } else {
+                 navigateToStep('scan-user'); // Start the user scanning process only if URLs are set
+             }
+        });
+
+    </script>
+</body>
+</html>
+
